@@ -1,0 +1,176 @@
+rm(list=ls())  # clear memory
+
+
+library(rstan)
+library(tidyverse)
+library(bayesplot)
+library(deSolve)
+library(readxl)
+library(wesanderson)
+library(plyr)
+library(latex2exp)
+
+
+V.dataset <- read_excel("~/Downloads/V-data.xls")
+V.data <- V.dataset$`Viral load`
+V.time <- V.dataset$Time
+
+M.dataset <- read_excel("~/Downloads/M-data.xls")
+M.data <- M.dataset$Macrophages
+M.time <- M.dataset$Time
+
+
+# save StanFit 
+#saveRDS(fit_Model_TIV, "Final_fitting_TIV.rds")
+#saveRDS(fit_Model_IR, "Final_fitting_IR.rds")
+
+fit_Model_Vonly2<- readRDS("~/Desktop/DDE-macrophages/GlobalSensitivityAnalysis/Sim-Est-Plot/True Value/fit_Vonly2-trueValue.rds")
+fit_Model_VM2<- readRDS("~/Desktop/DDE-macrophages/GlobalSensitivityAnalysis/Sim-Est-Plot/True Value/fit_VM2-trueValue.rds")
+print(fit_Model_Vonly2 , pars = c("log10_theta"))
+print(fit_Model_VM2 , pars = c("log10_theta"))
+
+# extract posterior samples for selected parameters
+posterior_samples_merged_after_burnin_Vonly <-  rstan::extract(fit_Model_Vonly2 , pars = c( "log10_theta",'sigma'))
+posterior_samples_merged_after_burnin_VM <-  rstan::extract(fit_Model_VM2 , pars = c( "log10_theta",'sigma'))
+
+
+# show all marginal posterior distributions
+posterior_sample_table_Vonly <-  data.frame(s_V = posterior_samples_merged_after_burnin_Vonly$log10_theta[,1],
+                                            beta = posterior_samples_merged_after_burnin_Vonly$log10_theta[,2],
+                                            q_FI = posterior_samples_merged_after_burnin_Vonly$log10_theta[,3],
+                                            q_FM = posterior_samples_merged_after_burnin_Vonly$log10_theta[,4],
+                                            q_prime = posterior_samples_merged_after_burnin_Vonly$log10_theta[,5])
+
+
+posterior_sample_table_VM <-   data.frame(s_V = posterior_samples_merged_after_burnin_VM$log10_theta[,1],
+                                          beta = posterior_samples_merged_after_burnin_VM$log10_theta[,2],
+                                          q_FI = posterior_samples_merged_after_burnin_VM$log10_theta[,3],
+                                          q_FM = posterior_samples_merged_after_burnin_VM$log10_theta[,4],
+                                          q_prime = posterior_samples_merged_after_burnin_VM$log10_theta[,5])
+
+
+# plot and compare epsilon1 estimated from the two different models 
+
+
+Type <- as.character(c("V data only", "V and M data"),
+                     levels = c("V data only", "V and M data"))
+
+# s_V
+sV.Vonly <-  posterior_sample_table_Vonly$s_V
+sV.VM <- posterior_sample_table_VM$s_V
+sV.df <- data.frame(sV = c(sV.Vonly, sV.VM), type = c(rep(Type, each = length(sV.Vonly))))
+sV.mu <- ddply(sV.df, "type", summarise, grp.mean=mean(sV))
+sV.median <- ddply(sV.df,"type", summarise, grp.median = quantile(sV, 0.5))
+# check mean value and median value 
+#head(sV.mu)
+#head(sV.median)
+ggplot(sV.df, aes(x=sV, color=type)) +
+  geom_histogram(aes(y = ..density..), bins = 150, position="identity", alpha = 0.6, fill = "white")+
+  geom_vline(data = sV.mu, aes(xintercept = grp.mean, color = type),
+             linetype = 'dashed') + 
+  geom_vline(aes(xintercept=log10(10)),
+             linetype="solid", color = "red") + 
+  stat_function(fun = function(x) {dnorm(x, -1, 2)}, color = 'black') +
+  scale_color_brewer(palette="Accent") + 
+  theme_minimal() + 
+  theme(text = element_text(size = 20), 
+        panel.grid.major = element_blank()) + 
+  labs(y = "Density") + xlab(TeX("$\\log_{10}(s_v)$")) + xlim(c(-10,6))
+#+ annotate("Text", x=log10(10), y= 400, label= "true mean", parse=FALSE, size = 7) 
+
+
+
+
+# beta
+beta.Vonly <-  posterior_sample_table_Vonly$beta
+beta.VM <- posterior_sample_table_VM$beta
+beta.df <- data.frame(beta = c(beta.Vonly, beta.VM), type = c(rep(Type, each = length(beta.Vonly))))
+beta.mu <- ddply(beta.df, "type", summarise, grp.mean=mean(beta))
+beta.median <- ddply(beta.df,"type", summarise, grp.median = quantile(beta, 0.5))
+
+ggplot(beta.df, aes(x=beta, color=type)) +
+  geom_histogram(aes(y = ..density..), bins = 200, position="identity", alpha = 0.6, fill = "white")+
+  geom_vline(data = beta.mu, aes(xintercept = grp.mean, color = type),
+             linetype = 'dashed') + 
+  geom_vline(aes(xintercept=log10(3e-8)),
+             linetype="solid", color = "red") + 
+  stat_function(fun = function(x) {dnorm(x, -6, 3)}, color = 'black') +
+  scale_color_brewer(palette="Accent") + 
+  theme_minimal() + 
+  theme(text = element_text(size = 20), 
+        panel.grid.major = element_blank()) + 
+  labs(y = "Density") + xlab(TeX("$\\log_{10}(\\beta)$")) + xlim(c(-8,-6))
+
+
+
+# q_FI 
+qFI.Vonly <-  posterior_sample_table_Vonly$q_FI
+qFI.VM <- posterior_sample_table_VM$q_FI
+qFI.df <- data.frame(qFI = c(qFI.Vonly, qFI.VM), type = c(rep(Type, each = length(qFI.Vonly))))
+qFI.mu <- ddply(qFI.df, "type", summarise, grp.mean=mean(qFI))
+qFI.median <- ddply(qFI.df,"type", summarise, grp.median = quantile(qFI, 0.5))
+
+ggplot(qFI.df, aes(x=qFI, color=type)) +
+  geom_histogram(aes(y = ..density..), bins = 100, position="identity", alpha = 0.4, fill = "white")+
+  geom_vline(data = qFI.mu, aes(xintercept = grp.mean, color = type),
+             linetype = 'dashed') + 
+  geom_vline(aes(xintercept=log10(2e-5)),
+             linetype="solid", color = "red") + 
+  stat_function(fun = function(x) {dnorm(x, -5, 3)}, color = 'black') +
+  scale_color_brewer(palette="Accent") + 
+  theme_minimal() + 
+  theme(text = element_text(size = 20), 
+        panel.grid.major = element_blank()) + 
+  labs(y = "Density") + xlab(TeX("$\\log_{10}(\\q_{FI})$")) + xlim(c(-15,2))
+
+
+
+
+#q_FM
+qFM.Vonly <-  posterior_sample_table_Vonly$q_FM
+qFM.VM <- posterior_sample_table_VM$q_FM
+qFM.df <- data.frame(qFM = c(qFM.Vonly, qFM.VM), type = c(rep(Type, each = length(qFM.Vonly))))
+qFM.mu <- ddply(qFM.df, "type", summarise, grp.mean=mean(qFM))
+qFM.median <- ddply(qFM.df,"type", summarise, grp.median = quantile(qFM, 0.5))
+
+ggplot(qFM.df, aes(x=qFM, color=type)) +
+  geom_histogram(aes(y = ..density..), bins = 80, position="identity", alpha = 0.3, fill = "white")+
+  geom_vline(data = qFM.mu, aes(xintercept = grp.mean, color = type),
+             linetype = 'dashed') + 
+  geom_vline(aes(xintercept=log10(4e-7)),
+             linetype="solid", color = "red") + 
+  stat_function(fun = function(x) {dnorm(x, -7, 3)}, color = 'black') +
+  scale_color_brewer(palette="Accent") + 
+  theme_minimal() + 
+  theme(text = element_text(size = 20), 
+        panel.grid.major = element_blank()) + 
+  labs(y = "Density") + xlab(TeX("$\\log_{10}(\\q_{FM})$")) + xlim(c(-20,10))
+
+
+
+
+#q_prime
+qprime.Vonly <-  posterior_sample_table_Vonly$q_prime
+qprime.VM <- posterior_sample_table_VM$q_prime
+qprime.df <- data.frame(qprime = c(qprime.Vonly, qprime.VM), type = c(rep(Type, each = length(qprime.Vonly))))
+qprime.mu <- ddply(qprime.df, "type", summarise, grp.mean=mean(qprime))
+qprime.median <- ddply(qprime.df,"type", summarise, grp.median = quantile(qprime, 0.5))
+
+ggplot(qprime.df, aes(x=qprime, color=type)) +
+  geom_histogram(aes(y = ..density..), bins = 100, position="identity", alpha = 0.4, fill = "white")+
+  geom_vline(data = qprime.mu, aes(xintercept = grp.mean, color = type),
+             linetype = 'dashed') + 
+  geom_vline(aes(xintercept=log10(1e-6)),
+             linetype="solid", color = "red") + 
+  stat_function(fun = function(x) {dnorm(x, -7, 3)}, color = 'black') +
+  scale_color_brewer(palette="Accent") + 
+  theme_minimal() + 
+  theme(text = element_text(size = 20), 
+        panel.grid.major = element_blank()) + 
+  labs(y = "Density") + xlab(TeX("$\\log_{10}(\\q^')$")) + xlim(c(-20,10))
+
+
+
+
+
+
