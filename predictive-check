@@ -1,0 +1,216 @@
+#saveRDS(fit_Model_Vonly.k1k2.dec, "fit_Vonly.k1k2.dec.rds")
+
+
+
+V.dataset <- read_excel("~/Downloads/V-data.xls")
+V.data <- V.dataset$`Viral load`
+V.time <- V.dataset$Time
+
+M.dataset <- read_excel("~/Downloads/M-data.xls")
+M.data <- M.dataset$Macrophages
+M.time <- M.dataset$Time
+
+
+fit_Model_Vonly<- readRDS("~/Desktop/DDE-macrophages/GlobalSensitivityAnalysis/Sim-Est-Plot/kappaF-phi-xiR/fit_Vonly.innate.dec.rds")
+fit_Model_VM <- readRDS("~/Desktop/DDE-macrophages/GlobalSensitivityAnalysis/Sim-Est-Plot/kappaF-phi-xiR/fit_VM.innate.dec.rds")
+# show summary result
+print(fit_Model_Vonly , pars = c("log10_theta"))
+print(fit_Model_VM, pars = c("log10_theta"))
+# extract posterior samples for selected parameters
+
+posterior_samples_all.Vonly = rstan::extract(fit_Model_Vonly, pars = c("log10_theta"), inc_warmup = TRUE, permuted = FALSE)
+posterior_samples_merged_after_burnin.Vonly = rstan::extract(fit_Model_Vonly, pars = c("log10_theta"))
+
+posterior_samples_all.VM = rstan::extract(fit_Model_VM, pars = c("log10_theta"), inc_warmup = TRUE, permuted = FALSE)
+posterior_samples_merged_after_burnin.VM = rstan::extract(fit_Model_VM, pars = c("log10_theta"))
+
+# show markov chains
+#library(bayesplot)
+#color_scheme_set("brewer-Spectral")
+#mcmc_trace(posterior_samples_all, n_warmup = 1000,
+#           facet_args = list(nrow = 2))
+
+# show all marginal posterior distributions
+posterior_sample_table.Vonly = data.frame(s_V = posterior_samples_merged_after_burnin.Vonly$log10_theta[,1],
+                                    beta = posterior_samples_merged_after_burnin.Vonly$log10_theta[,2],
+                                    q_FI = posterior_samples_merged_after_burnin.Vonly$log10_theta[,3],
+                                    q_FM = posterior_samples_merged_after_burnin.Vonly$log10_theta[,4],
+                                    q_prime = posterior_samples_merged_after_burnin.Vonly$log10_theta[,5])
+                                    #kappa_F = posterior_samples_merged_after_burnin.Vonly$log10_theta[,6])
+
+
+
+posterior_sample_table.VM = data.frame(s_V = posterior_samples_merged_after_burnin.VM$log10_theta[,1],
+                                          beta = posterior_samples_merged_after_burnin.VM$log10_theta[,2],
+                                          q_FI = posterior_samples_merged_after_burnin.VM$log10_theta[,3],
+                                          q_FM = posterior_samples_merged_after_burnin.VM$log10_theta[,4],
+                                          q_prime = posterior_samples_merged_after_burnin.VM$log10_theta[,5])
+                                          #kappa_F = posterior_samples_merged_after_burnin.VM$log10_theta[,6])
+
+
+# posterior predictive check
+Within_host_model = function(t, y, theta){
+  dydt1 = 3.3e+3 - 1.1e-2 * y[1] - 0.4 * (y[6]/(y[6] + 1.2e+7)) * (1/(1 + 1e-4 * y[3])) * y[1] + 0.3 * y[2] - 4e-6 * (y[9]/ (y[9]+1e+6)) * y[1] + 0.3 * y[3];
+  dydt2 = theta[1] * y[5] + 0.4 * (y[6]/(y[6] + 1.2e+7)) * (1 / (1 + 1e-4 * y[3])) * y[1] - 0.3 * y[2] - 1.1e-2 * y[2];
+  dydt3 = 4e-6 * (y[9]/ (y[9]+1e+6)) * y[1] - 0.3 * y[3] - 1.1e-2 * y[3];
+  
+  
+  dydt4 =  0.8 * (y[4]+y[8]) * (1 - (y[4] + y[5] + y[8])/ 7e+7) - theta[2] * y[4] * y[6] - 0.33*0.1 * y[7] * y[4] + 2.6*0.1 * y[8]
+  dydt5 =  theta[2] * y[4] * y[6] - 3 * y[5] - 3*0.1* y[7] * y[5] - 8 * ( t^4 / (t^4 + 7^4) ) * y[5]
+  dydt6 =  100 * y[5] - 20 * y[6] - 320 * ( t^4 / (t^4 + 10^4 ) ) * y[6] - theta[5] * y[1] *y[6]
+  
+  dydt7 = theta[3] * y[5] + theta[4] * y[2] - 2 * y[7]
+  dydt8 = 0.33*0.1 * y[7] * y[4] - 2.6*0.1 * y[8]
+  dydt9 = 3 * y[5] +  3 * y[7] * y[5] + 8 * ( t^4 / (t^4 + 7^4) ) * y[5] - 8e-7 * y[9] * y[2] - 2 * y[9]
+  
+  
+  list(c(dydt1, dydt2, dydt3, dydt4, dydt5, dydt6, dydt7, dydt8, dydt9))
+}
+
+
+t_ppc = seq(0, 7, 0.1)
+
+V_ppc.Vonly = matrix(, nrow = 2000, ncol = length(t_ppc))
+lower_95PI.Vonly = t_ppc
+median_95PI.Vonly = t_ppc
+upper_95PI.Vonly = t_ppc
+
+
+M_ppc.Vonly = matrix(, nrow = 2000, ncol = length(t_ppc))
+M.lower_95PI.Vonly = t_ppc
+M.median_95PI.Vonly = t_ppc
+M.upper_95PI.Vonly = t_ppc
+
+
+V_ppc.VM = matrix(, nrow = 2000, ncol = length(t_ppc))
+lower_95PI.VM = t_ppc
+median_95PI.VM = t_ppc
+upper_95PI.VM = t_ppc
+
+
+M_ppc.VM = matrix(, nrow = 2000, ncol = length(t_ppc))
+M.lower_95PI.VM = t_ppc
+M.median_95PI.VM = t_ppc
+M.upper_95PI.VM = t_ppc
+
+
+
+
+for (i in 1:2000){
+  y_init = c(3e+5,
+             0,
+             0,
+             7e+7, 
+             0, 
+             100,
+             0,
+             0,
+             0)
+  
+  
+  param_fit.Vonly = c(10^posterior_sample_table.Vonly$s_V[i], 
+                      10^posterior_sample_table.Vonly$beta[i], 
+                      10^posterior_sample_table.Vonly$q_FI[i], 
+                      10^posterior_sample_table.Vonly$q_FM[i],
+                      10^posterior_sample_table.Vonly$q_prime[i])
+                      #10^posterior_sample_table.Vonly$kappa_F[i])
+  
+  
+  param_fit.VM = c(10^posterior_sample_table.VM$s_V[i], 
+                      10^posterior_sample_table.VM$beta[i], 
+                      10^posterior_sample_table.VM$q_FI[i], 
+                      10^posterior_sample_table.VM$q_FM[i],
+                      10^posterior_sample_table.VM$q_prime[i])
+                      #10^posterior_sample_table.VM$kappa_F[i])
+  
+  
+  model_output.Vonly = ode(times = t_ppc, y = y_init, func = Within_host_model, parms = param_fit.Vonly, method = "bdf")
+  V_ppc.Vonly[i,] = model_output.Vonly[,7]
+  M_ppc.Vonly[i,] = model_output.Vonly[,2] + model_output.Vonly[,3] + model_output.Vonly[,4]
+  
+  
+  
+  model_output.VM = ode(times = t_ppc, y = y_init, func = Within_host_model, parms = param_fit.VM, method = "bdf")
+  V_ppc.VM[i,] = model_output.VM[,7]
+  M_ppc.VM[i,] = model_output.VM[,2] + model_output.VM[,3] + model_output.VM[,4]
+}
+
+for (i in 1:length(t_ppc)){
+  
+  temp.Vonly = unname(quantile(V_ppc.Vonly[,i], probs = c(0.025, 0.5, 0.975)))
+  lower_95PI.Vonly[i] = temp.Vonly[1]
+  median_95PI.Vonly[i] = temp.Vonly[2]
+  upper_95PI.Vonly[i] = temp.Vonly[3]
+  
+  M.temp.Vonly = unname(quantile(M_ppc.Vonly[,i], probs = c(0.025, 0.5, 0.975)))
+  M.lower_95PI.Vonly[i] = M.temp.Vonly[1]
+  M.median_95PI.Vonly[i] = M.temp.Vonly[2]
+  M.upper_95PI.Vonly[i] = M.temp.Vonly[3]
+  
+  
+  temp.VM = unname(quantile(V_ppc.VM[,i], probs = c(0.025, 0.5, 0.975)))
+  lower_95PI.VM[i] = temp.VM[1]
+  median_95PI.VM[i] = temp.VM[2]
+  upper_95PI.VM[i] = temp.VM[3]
+  
+  M.temp.VM = unname(quantile(M_ppc.VM[,i], probs = c(0.025, 0.5, 0.975)))
+  M.lower_95PI.VM[i] = M.temp.VM[1]
+  M.median_95PI.VM[i] = M.temp.VM[2]
+  M.upper_95PI.VM[i] = M.temp.VM[3]
+}
+
+
+
+data_plot <-  data.frame(time = V.time,
+                         V = V.data)
+
+
+
+fit_plot <- data.frame(time = t_ppc, 
+                       lower_95PI = c(lower_95PI.Vonly, lower_95PI.VM), 
+                       upper_95PI = c(upper_95PI.Vonly, upper_95PI.VM), 
+                       Data = rep(c('V only', 'V and M'), each = length(lower_95PI.Vonly)))
+
+ggplot(fit_plot, aes(time))+
+  geom_point(data = data_plot, aes(time, log10(V)), size = 3) +
+  geom_ribbon(aes(ymin = log10(lower_95PI), ymax = log10(upper_95PI), fill = Data), alpha = 0.2, na.rm = TRUE) +
+  theme_bw() + 
+  theme(text = element_text(size = 25))  + 
+  ylab("Viral load (fold change)") + xlab("Days post infection (p.i.)") + 
+  theme(legend.key = element_rect(fill = "white", colour = "white"), legend.position = "top") + 
+  scale_color_manual(values = wes_palette("Darjeeling1", n = 4)) + 
+  scale_fill_manual(values = wes_palette("Darjeeling1", n = 4)) 
+
+
+
+
+
+M.data_plot <-  data.frame(time = M.time,
+                           M = M.data)
+
+
+fit_plot.M <- data.frame(time = t_ppc, 
+                       lower_95PI = c(M.lower_95PI.Vonly, M.lower_95PI.VM), 
+                       upper_95PI = c(M.upper_95PI.Vonly, M.upper_95PI.VM), 
+                       Data = rep(c('V only', 'V and M'), each = length(M.lower_95PI.Vonly)))
+
+ggplot(fit_plot.M, aes(time))+
+  geom_point(data = M.data_plot, aes(time, log10(M)), size = 3) +
+  geom_ribbon(aes(ymin = log10(lower_95PI), ymax = log10(upper_95PI), fill = Data), alpha = 0.2, na.rm = TRUE) +
+  theme_bw() + 
+  theme(text = element_text(size = 25))  + 
+  ylab("# of macrophages (fold change)") + xlab("Days post infection (p.i.)") + 
+  theme(legend.key = element_rect(fill = "white", colour = "white"), legend.position = "top") + 
+  scale_color_manual(values = wes_palette("Darjeeling1", n = 4)) + 
+  scale_fill_manual(values = wes_palette("Darjeeling1", n = 4)) 
+
+
+
+
+
+
+# =============== Save the fitting results and generate outputs in CSV file  =================== #
+write.csv(posterior_samples_merged_after_burnin, file="fitting_results_Patient1.csv")
+save.image(file = "fitting_results_Patient1.RData")
+
+
